@@ -34,18 +34,22 @@ public:
         }
     }
 
-    // ---- Chạy lệnh thường (không cần admin) ----
-    void runCMD(const string& cmd) {
-        STARTUPINFOA si = { sizeof(si) };
+    // ---- Chạy lệnh thường ----
+    void runCMD(const string &cmd){
+        STARTUPINFOA si = {sizeof(si)};
         PROCESS_INFORMATION pi = {};
-        vector<char> commandLine(cmd.begin(), cmd.end());
+
+        string fullCmd = "cmd.exe /c " + cmd;
+        vector<char> commandLine(fullCmd.begin(), fullCmd.end());
         commandLine.push_back('\0');
-        if (CreateProcessA(NULL, commandLine.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+
+        // Sử dụng tham số thứ 2 của CreateProcessA để truyền toàn bộ chuỗi lệnh
+        if (CreateProcessA(NULL, commandLine.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)){
             WaitForSingleObject(pi.hProcess, INFINITE);
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
-        } else {
-            cout << "[!] Khong the chay lenh: " << cmd.substr(0, 60) << "...\n";
+        }else{
+            cout << "[!] Khong the chay lenh. Error code: " << GetLastError() << "\n";
         }
     }
 
@@ -444,7 +448,7 @@ public:
         system("title Toolkit by huii404");
         cout << "====================================================\n";
         core.setColor(4); cout << "DEVICE : " << core.getDeviceType() << "\n";
-        core.setColor(5); cout << "VERSION: 1.3.0 PRO | Github: Huii404\n";
+        core.setColor(5); cout << "VERSION: 1.2.0 PRO | Github: Huii404\n";
         core.setColor(6); cout << "Gmail  : hcao84539@gmail.com\n";
         core.setColor(7);
         cout << "====================================================\n";
