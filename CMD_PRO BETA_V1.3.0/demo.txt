@@ -1,0 +1,9 @@
+chức năng của bản tool mới
+
+1. hỗ trợ cài win không dùng app thứ 3 (chưa)
+2. hỗ trợ chuyển đổi phiên bản win mà không cần cài lại
+ví dụ: win 10 home->win 10 pro
+3. tạo mã qr
+4. viết lại mã nguồn rõ ràng theo nhiệm vụ
+5. chuyển file bằng ổ đĩa mạng (chưa)
+6. fix lỗi cũ bản trước (chưa)
