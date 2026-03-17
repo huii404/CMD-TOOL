@@ -3,15 +3,26 @@
 #include <fstream>
 #include <ctime>
 #include <iomanip>
+#include <cstdio>
 #include <sstream>
 #include <limits>
 #include <vector>
 #include <string>
+#include <thread>
 using namespace std;
 
-
 class SystemCore {
+    HANDLE hJob;
 public:
+    SystemCore() {
+        // Khởi tạo Job Object khi Tool chạy
+        hJob = CreateJobObjectA(NULL, NULL);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {0};
+        // Cấu hình: Khi tiến trình cha đóng, tất cả con phải đóng theo
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+    }
+
     void setColor(int color) {
         SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
     }
@@ -28,10 +39,29 @@ public:
         return ss.str();
     }
 
-    void log(int mainChoice, int subChoice) {
+    template <typename... Args>
+    void log(Args... args){
         ofstream f("History.txt", ios::app);
-        if (f.is_open())
-            f << getTime() << ": [" << mainChoice << "]-[" << subChoice << "]\n";
+        if (!f.is_open()) return;
+
+        f << getTime() << " : ";
+
+        vector<int> path = {args...};
+        size_t n = path.size();
+
+        for (size_t i = 0; i < n; ++i){
+            bool isLast = (i == n - 1); // Kiểm tra phần tử cuối cùng?
+
+            if (isLast){
+                if (path[i] == 0)f << "[0.EXIT]";
+                else             f << "[" << path[i] << ".]";
+            }else{
+                f << "[" << path[i] << "]";
+            }
+
+            if (!isLast)f << "->";
+        }f << "\n";
+        f.close();
     }
 
     void runCMD(const string &cmd) {
@@ -40,23 +70,30 @@ public:
         string fullCmd = "cmd.exe /c " + cmd;
         vector<char> commandLine(fullCmd.begin(), fullCmd.end());
         commandLine.push_back('\0');
-        if (CreateProcessA(NULL, commandLine.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+
+        // Tạo tiến trình ở trạng thái TREO để gán vào Job trước khi chạy
+        if (CreateProcessA(NULL, commandLine.data(), NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+            AssignProcessToJobObject(hJob, pi.hProcess); // Gán con vào Job
+            ResumeThread(pi.hThread); // Cho phép con chạy tiếp
+            
             WaitForSingleObject(pi.hProcess, INFINITE);
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
-        } else {
-            cout << "[!] Khong the chay lenh. Error code: " << GetLastError() << "\n";
         }
+    }
+    
+     // Khi tool đóng, Job đóng -> Tiến trình con bay sạch
+    ~SystemCore() {
+        if (hJob) CloseHandle(hJob); 
     }
 
     bool runAdmin(const string &cmd, bool silent = false) {
         if (!silent) {
             string answer;
-            cout << "CHAY QUYEN ADMIN CHO LENH [" << cmd << "] (Y/N): ";
-            cin >> answer;
+            cout << "Chạy quyền Admin cho lệnh [" << cmd << "] (Y/N): ";cin >> answer;
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
             if (answer != "y" && answer != "Y") {
-                cout << "Bo qua lenh.\n";
+                cout << "Bỏ qua lệnh.\n";
                 return false;
             }
         }
@@ -87,7 +124,6 @@ public:
         }
     }
 
-
     string getDeviceType() {
         static string cached = "";
         if (!cached.empty()) return cached;
@@ -108,7 +144,7 @@ public:
     }
 
     void waitEnter() {
-        cout << "\nNHAN ENTER DE QUAY LAI...";
+        cout << "\n\nNHẤN ENTER ĐỂ QUAY LẠI...";
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
         cin.get();
     }
@@ -118,7 +154,7 @@ public:
         while (true) {
             cout << prompt;
             if (cin >> val) return val;
-            cout << "[!] Vui long nhap so nguyen!\n";
+            cout << "[!] Vui lòng nhập số nguyên!\n";
             cin.clear();
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
         }
@@ -163,23 +199,23 @@ public:
         if (level > 9) level = 9;
         if (destination.find(".zip") == string::npos) destination += ".zip";
         string cmd = "7za.exe a -tzip \"" + destination + "\" \"" + source + "\" -mx" + to_string(level) + " -mmt=on";
-        cout << "\n[System] Dang khoi tao tien trinh nen...\n[i] Che do: ";
+        cout << "\n[System] Đang khởi tạo tiến trình nền...\n[i] Chế độ: ";
         if      (level == 0) cout << "Copy (Store)\n";
         else if (level <= 3) cout << "Nhanh\n";
-        else if (level <= 6) cout << "Tieu chuan\n";
-        else                 cout << "Nen sau\n";
+        else if (level <= 6) cout << "Tiêu chuẩn\n";
+        else                 cout << "Nén sau\n";
         int result = system(cmd.c_str());
-        if (result == 0) cout << "[OK] Nen hoan tat!\n";
-        else             cout << "[!] Loi thuc thi (Ma loi: " << result << ")\n";
+        if (result == 0) cout << "[OK] Nén hòan tất!\n";
+        else             cout << "[!] Lỗi thực thi (Ma loi: " << result << ")\n";
     }
 
     void UNZIP(string zipFile, string extractPath) {
         if (zipFile.empty() || extractPath.empty()) { cout << "[!] Duong dan khong hop le.\n"; return; }
         string cmd = "7za.exe x \"" + zipFile + "\" -o\"" + extractPath + "\" -y";
-        cout << "\n[System] Dang giai nen: " << zipFile << "...\n";
+        cout << "\n[System] Đang giải nén: " << zipFile << "...\n";
         int result = system(cmd.c_str());
-        if (result == 0) cout << "[OK] Giai nen xong vao: " << extractPath << "\n";
-        else             cout << "[X] Giai nen that bai! Ma loi: " << result << "\n";
+        if (result == 0) cout << "[OK] Giải nén xong vào: " << extractPath << "\n";
+        else             cout << "[X] Giải nén thất bại! Mã lỗi: " << result << "\n";
     }
 
     string trim(string s) {
@@ -222,10 +258,10 @@ public:
                 return false;
             }
 
-            // 1. Thay đổi Startup Type (Manual hoặc Disabled)
+            // Thay đổi Startup Type (Manual hoặc Disabled)
             bool configSuccess = ChangeServiceConfigA(svc, SERVICE_NO_CHANGE, startupType,SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
-            // 2. Nếu cần dừng ngay lập tức
+            //  disable
             if (stopService){
                 SERVICE_STATUS status;
                 ControlService(svc, SERVICE_CONTROL_STOP, &status);
@@ -235,9 +271,10 @@ public:
             CloseServiceHandle(scm);
             return configSuccess;
         }
+
         // logic tắt/bật/in các gói dịch vụ
         void turnOffServicesMenu(){
-            // Danh sách minh bạch để tạo sự tin tưởng
+            // Danh sách minh bạch 
             struct SvcInfo{
                 string name;
                 string desc;
@@ -252,7 +289,7 @@ public:
             };
 
             cout << "====================================================\n";
-            cout << "   DANH SACH CAC DICH VU SE DUOC TOI UU (MANUAL):\n";
+            cout << "   DANH SÁCH CÁC DỊCH VỤ SẼ ĐƯỢC TÓI ƯU (MANUAL):\n";
             for (const auto &s : targetSvcs){
                 cout << "   - " << s.desc << " [" << s.name << "]\n";
             }
@@ -274,14 +311,14 @@ public:
             {
                 if (ServiceControlAPI(s.name, startType, true))
                 {
-                    cout << "[OK] Da thiet lap " << modeName << " cho: " << s.name << "\n";
+                    cout << "[OK] Đã thiết lập " << modeName << " cho: " << s.name << "\n";
                 }
                 else
                 {
-                    cout << "[!] That bai: " << s.name << " (Kiem tra quyen Admin)\n";
+                    cout << "[!] Thất bại: " << s.name << " (Kiem tra quyen Admin)\n";
                 }
             }
-            cout << "\n[SUCCESS] Hoan tat tien trinh toi uu dich vu!\n";
+            cout << "\n[SUCCESS] Hoàn tất tiến trình tối ưu dịch vụ!\n";
         }
        
         void lockPC()        { sc.runCMD("rundll32.exe user32.dll,LockWorkStation"); }
@@ -313,7 +350,7 @@ public:
                     cout << "\n[" << index++ << "] WiFi: " << wifiName << "\n";
                     string cmd = "netsh wlan show profile \"" + wifiName + "\" key=clear";
                     FILE *pipe2 = _popen(cmd.c_str(), "r");
-                    if (!pipe2) { cout << "   [!] Khong lay duoc thong tin.\n"; continue; }
+                    if (!pipe2) { cout << "   [!] Không lấy được thông tin.\n"; continue; }
                     char buffer2[512];
                     string auth = "", cipher = "", pass = "(Open network)";
                     while (fgets(buffer2, sizeof(buffer2), pipe2)) {
@@ -323,7 +360,7 @@ public:
                         if (info.find("Key Content")    != string::npos) pass   = getField(info);
                     }
                     _pclose(pipe2);
-                    cout << "   Password : " << pass << "\n   Auth     : " << auth << "\n   Cipher   : " << cipher << "\n------------------------------------\n";
+                    cout << "   Password : " << pass << " |  Auth : " << auth << " | Cipher : " << cipher << "\n----------------------------------------------------";
                 }
             }
             _pclose(pipe);
@@ -367,11 +404,6 @@ public:
         void windowsTelemetry()  { sc.runAdmin("reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection\" /v AllowTelemetry /t REG_DWORD /d 0 /f"); }
         void reduceShutdownTime(){ sc.runCMD("reg add \"HKCU\\Control Panel\\Desktop\" /v \"WaitToKillAppTimeout\" /t REG_SZ /d \"2000\" /f"); }
 
-        void customize_Registry() {
-            sc.runCMD("powershell Set-ItemProperty -Path \"HKCU:\\Control Panel\\Desktop\" -Name \"VisualFXSetting\" -Value 2");
-            sc.runCMD("powershell Set-ItemProperty -Path \"HKCU:\\Control Panel\\Desktop\\WindowMetrics\" -Name \"MinAnimate\" -Value 0");
-            sc.runCMD("powershell Set-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\" -Name \"TaskbarAnimations\" -Value 0");
-        }
     };
 
     class Hardware {
@@ -392,6 +424,7 @@ public:
     };
 
     class Extension;
+
     class optimal {
         SystemCore &sc;
         Internet &n;
@@ -403,14 +436,13 @@ public:
         void optimizeSystemPRO() {
             cout << "[...] Bat dau toi uu he thong toan dien...\n\n";
             cout << "[Don rac]\n";          m.cleanDisk();
-            cout << "[Giam UI lag]\n";      m.customize_Registry();
             cout << "[Giam delay tat app]\n"; m.reduceShutdownTime();
             cout << "[Chan cai app ngam]\n";  m.Consumer_Content();
             cout << "[Tat telemetry]\n";    m.windowsTelemetry();
             cout << "[Tat hibernate]\n";    m.Hibernate();
-            cout<<"[Xóa app rác]\n";e.uninstallBloatware();
             cout << "[OK] He thong da duoc toi uu!\n";
         }
+
 
         void optimizeNetworkPRO() {
             cout << "[...] Dang toi uu ket noi mang...\n";
@@ -482,9 +514,9 @@ public:
 
         void autoClickPoint() {
             cout << "--- AUTO CLICK TAI VI TRI ---\n";
-            int times      = sc.readInt("So lan click: ");
-            int intervalMs = sc.readInt("Delay giua cac lan (ms): ");
-            int delaySec   = sc.readInt("Thoi gian chuan bi - di chuyen chuot (giay): ");
+            int times      = sc.readInt("Só lần click: ");
+            int intervalMs = sc.readInt("Delay giữa các lần (ms): ");
+            int delaySec   = sc.readInt("Di chuyển chuột đến đích (giây): ");
             if (times <= 0 || intervalMs < 0 || delaySec < 0) { cout << "[!] Gia tri khong hop le.\n"; return; }
             cout << "\nDua chuot den vi tri can click...\n";
             for (int i = delaySec; i > 0; i--) { cout << i << "... "; cout.flush(); Sleep(1000); }
@@ -541,29 +573,43 @@ public:
             sc.runCMD("curl qrenco.de/" + text);
         }
 
-        void ShowN_QR(int number) {
-            if (number >= 15 || number <= 0) { cout << "[!] So luong khong hop le!\n"; return; }
+        void ShowN_QR(int number){
+            if (number >= 15 || number <= 0){
+                cout << "[!] So luong khong hop le!\n";
+                return;
+            }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            int count = 1;
-            while (count <= number) {
+
+            vector<string> list_qr; 
+            int dem = 1;
+
+            while (dem <= number){
                 string text;
-                cout << "[" << count << "/" << number << "] Nhap noi dung QR: ";
-                if (!getline(cin, text) || text.empty()) continue;
-                if (text_processing(text)) continue;
-                cout << "Dang lay ma QR... (Cho 4s chong Spam)\n";
-                Sleep(4000);
-                for (char &c : text) if (c == ' ') c = '+';
-                sc.runCMD("curl qrenco.de/" + text);
-                cout << "\n--------------------------------------------\n";
-                count++;
+                cout << "[" << dem << "/" << number << "] Nhap noi dung QR: ";
+                if (!getline(cin, text) || text.empty()){
+                    cout << "[!] Noi dung khong duoc de trong!\n";
+                    continue;
+                }
+                list_qr.push_back(text); 
+                dem++;
+            }
+
+            for (int i = 0; i < list_qr.size(); i++){
+                string current_text = list_qr[i];
+                cout << "Dang lay ma QR thu " << i + 1 << "...\n";Sleep(4000); 
+                for (char &c : current_text){
+                    if (c == ' ')c = '+';
+                }
+                sc.runCMD("curl qrenco.de/" + current_text);
+                cout << "\n--------------------------------------\n";
             }
         }
 
         void uninstallBloatware(){
-            // 1. Danh sách "Cấm xóa" (Whitelist) - Những app hệ thống cực kỳ quan trọng
-            // Mình đã thêm các thành phần login và cài đặt để máy không bị lỗi sau khi quét
+            // list " app Cấm xóa" (Whitelist)
+            // thêm các thành phần login và cài đặt để máy không bị lỗi sau khi quét
             vector<string> whitelist = {
-                "Store",               // Microsoft Store (Chợ ứng dụng)
+                "Store",               // Microsoft Store
                 "Calculator",          // Máy tính
                 "Photos",              // Xem ảnh
                 "StickyNotes",         // Ghi chú
@@ -588,7 +634,6 @@ public:
             cout << "[LOGIC] Giu lai: " << listCam << "\n";
             cout << "====================================================\n";
 
-            // 3. Thực thi lệnh PowerShell thông qua hàm runAdmin có sẵn của bạn
             // Dùng dấu nháy đơn ' ' quanh listCam để PowerShell hiểu là chuỗi regex
             string cmd = "powershell -Command \"Get-AppxPackage | Where-Object {$_.Name -notmatch '" + listCam + "'} | Remove-AppxPackage\"";
 
@@ -600,8 +645,87 @@ public:
             }
         }
     };
-};
 
+    class Explorer{
+        SystemCore &sc;
+
+    public:
+        Explorer(SystemCore &s) : sc(s) {}
+        void nguytrangFolder(){
+            string path, name1, nameZip, name3;
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            cout << "Vị trí (vd: D:\\Data): ";getline(cin, path);
+            // Cụm 1: Ảnh nền
+            cout << "Ảnh nền(ten.đuôi file): ";getline(cin, name1);
+            // Cụm 2: Thư mục zip đã có sẵn
+            cout << "Tên file nén.zip: ";getline(cin, nameZip);
+            // Cụm 3: Tên file đầu ra
+            cout << "Tên file đầu ra.đuôi file: ";getline(cin, name3);
+
+            string cmd = "cd /d \"" + path + "\" && copy /b \"" + name1 + "\" + \"" + nameZip + "\" \"" + name3 + "\"";
+            cout << "\n[Đang thực thi]: " << cmd << endl;
+            sc.runCMD(cmd.c_str());
+            cout << "\n[OK] Đã tạo file ngụy trang tại: " << path << "\\" << name3 << endl;
+        }
+    };
+
+    class ChatBox{
+        SystemCore &sc;
+        vector<string> messages;
+
+    public:
+        // Constructor: Tự động nạp data từ file txt khi Tool khởi chạy
+        ChatBox(SystemCore &s) : sc(s){
+            ifstream f("ChatData.txt");
+            string line;
+            if (f.is_open()){
+                messages.clear();
+                while (getline(f, line)){
+                    if (!line.empty()) messages.push_back(line);
+                }
+                f.close();
+            }
+            // Backup nếu file trống hoặc không tìm thấy file
+            if (messages.empty()){
+                messages.push_back("He thong san sang!");
+                messages.push_back("Dang doi lenh tu Nhan...");
+            }
+        }
+
+        // Hàm in chữ tại tọa độ chỉ định mà không làm mất Menu
+        void printAt(int x, int y, string text){
+            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            GetConsoleScreenBufferInfo(hConsole, &csbi);
+            COORD oldPos = csbi.dwCursorPosition; // Lưu vị trí bạn đang gõ Menu
+            COORD botPos = {(SHORT)x, (SHORT)y};
+            SetConsoleCursorPosition(hConsole, botPos);
+            sc.setColor(11); // Màu xanh lơ cho Bot
+            // Xóa dòng cũ trước khi in câu mới
+            cout << "                                                                   ";
+            SetConsoleCursorPosition(hConsole, botPos);
+            cout << ">> Bot: " << text;
+            SetConsoleCursorPosition(hConsole, oldPos); // Trả con trỏ về chỗ cũ
+            sc.setColor(7);
+        }
+
+        // Luồng chạy độc lập (Thread)
+        void startLoop(){
+            srand(time(0));
+            while (true){
+                // Đợi 1s để Menu thực hiện cls() xong (nếu có)
+                Sleep(1000);
+                string msg = messages[rand() % messages.size()];
+                // In tại Cột 2, Dòng 2 (Ngay dưới dòng thông tin hệ thống)
+                printAt(2, 2, msg);
+                // SAU 3 GIÂY ĐỔI CÂU THOẠI
+                Sleep(3000);
+            }
+        }
+    };
+
+};
 
 class AppUI : public SystemCore {
     Function::Internet   internet;
@@ -612,6 +736,8 @@ class AppUI : public SystemCore {
     Function::optimal    op;
     Function::AutoActions a;
     Function::Extension  exten;
+    Function::Explorer exp;
+    Function::ChatBox chat;
 
     bool titleSet = false;
 
@@ -619,38 +745,35 @@ public:
 // list khởi tạo thành viên
 //(*this) con trỏ đến chính object hiện tại | liên kết con-cha
 // dùng chung 1 vùng nhớ-> load app nhanh+giảm % ram tiêu hao
-    AppUI(): internet(*this), main_(*this), info(*this), manager(*this), h(*this), op(*this, internet, main_, exten), a(*this), exten(*this) {}
+    AppUI(): internet(*this), main_(*this), info(*this), manager(*this), h(*this), op(*this, internet, main_, exten), a(*this), exten(*this),exp(*this),chat(*this) {}
 
     void intro() {
         cls();
-        if (!titleSet) {
-            system("title Toolkit by huii404");
-            titleSet = true;
-        }
-        cout << "====================================================\n";
-        setColor(4); cout << "DEVICE : " << getDeviceType() << "\n";
-        setColor(5); cout << "VERSION: 1.3.0 PRO | Github: Huii404\n";
-        setColor(6); cout << "Gmail  : hcao84539@gmail.com\n";
+        cout << "=======================================================================\n";
+        setColor(3); cout << getTime() << " | "<<getDeviceType()<<" | VER: 1.3.0 PRO BETA | Github: Huii404 \n";
+        cout << "                                                                       \n";
         setColor(7);
-        cout << "====================================================\n";
+        cout << "=======================================================================\n";
     }
 
     void mainMenu() {
-        cout << "\n[1] Thống tin hệ thống         [2] Quản lý hệ thống";
-        cout << "\n[3] Mạng                       [4] Bảo trì";
-        cout << "\n[5] Phần cứng                  [6] Tiện ích";
-        cout << "\n[7] Tối ưu hóa PRO             [8] Chuyển phiên bản windows";
-        cout << "\n[9] Cài Win bằng cmd(comming soon)       [0] Thoát\n";
+        cout << "\n[1] Thống tin hệ thống           [2] Quản lý hệ thống";
+        cout << "\n[3] Mạng                         [4] Bảo trì";
+        cout << "\n[5] Phần cứng                    [6] Tiện ích";
+        cout << "\n[7] Tối ưu hóa PRO               [8] Chuyển phiên bản windows";
+        cout << "\n[9] File/Folder                  [0] Thoát\n";
         cout << "\n[Chon]: ";
     }
 
-    void menuThongTin()  { cls(); cout << "[1] Phần mềm   [2] System Info   [3] Driver   [0] Back\n[Chon]: "; }
-    void menuQuanLy()    { cls(); cout << "[1] Control Panel  [2] Task Manager  [3] Computer Mgmt\n[4] Services      [5] Registry      [6] Device Manager\n[7] Lock           [0] Back\n[Chon]: "; }
-    void menuMang()      { cls(); cout << "[1] Xem IP      [2] Renew IP       [3] WiFi Password\n[4] Flush DNS   [5] Reset TCP/IP   [0] Back\n[Chon]: "; }
-    void menuBaoTri()    { cls(); cout << "[1]  Dọn rác                [2]  Quet Virus\n[3]  SFC                    [4]  Check Disk\n[5]  Xoa lich su bao tri    [6]  Chan tai app ngam\n[7]  Giam UI-lag            [8]  Tat hibernate\n[9]  Restart                [10] Tat telemetry\n[11] Xóa app rác\n[0]  Back\nChon: "; }
-    void menuPhanCung()  { cls(); cout << "[1] Độ sáng     [0] Back\n[Chon]: "; }
-    void menuTienIch()   { cls(); cout << "[1] Auto Click\n[2] Spam Text\n[3] Auto Dan Data\n[4] Nen file/folder\n[5] Giai nen file/folder\n[6] Tao QR\n[0] Back\n[Chon]: "; }
-    void menuToiUu()     { cls(); cout << "[1] Tối ưu hệ thống PRO   [2] Toi uu mang   [0] Back\n[Chon]: "; }
+    void menuThongTin()  { cls(); cout << "[1] Phần mềm\n[2] System Info\n[3] Driver\n[0] Back\n[Chon]: "; }
+    void menuQuanLy()    { cls(); cout << "[1] Control Panel\n[2] Task Manager\n[3] Computer Mgmt\n[4] Services\n[5] Registry\n[6] Device Manager\n[7] Lock\n[0] Back\n[Chon]: "; }
+    void menuMang()      { cls(); cout << "[1] Xem IP\n[2] Renew IP\n[3] WiFi Password\n[4] Flush DNS\n[5] Reset TCP/IP\n[0] Back\n[Chon]: "; }
+    void menuBaoTri()    { cls(); cout << "[1] Dọn rác\n[2] Quét Virus\n[3] SFC\n[4] Check Disk\n[5] Xóa lịch sử bảo trì\n[6] Chặn tải app ngầm\n[8] Tắt hibernate\n[9] Restart\n[10] Tat telemetry\n[11] Xóa app rác\n[0]  Back\nChon: "; }
+    void menuPhanCung()  { cls(); cout << "[1] Độ sáng\n[0] Back\n[Chon]: "; }
+    void menuTienIch()   { cls(); cout << "[1] Auto Click\n[2] Spam Text\n[3] Auto Dán Data\n[4] Tạo QR\n[0] Back\n[Chon]: "; }
+    void menuToiUu()     { cls(); cout << "[1] Tối ưu hệ thống PRO\n[2] Toi ưu mạng\n[0] Back\n[Chon]: "; }
+    void file_folder()   { cls(); cout << "[1] Ngụy trang thư mục\n[2] Nén file/folder\n[3] Giải nén file/folder\n[0] Bach\n[chon]: ";
+    }
 
     int readSub() {
         int sub;
@@ -658,7 +781,10 @@ public:
         return sub;
     }
 
-    void run() {
+    void run(){
+        std::thread tBox(&Function::ChatBox::startLoop, &chat);
+        tBox.detach();
+
         int mainChoice;
         while (true) {
             intro(); mainMenu();
@@ -686,7 +812,7 @@ public:
                     if (sub == 2) manager.taskManager();
                     if (sub == 3) manager.computerMgmt();
                     if (sub == 4){
-                        int ans = readInt("\n[1] Mở services   [2] Tắt dịch vụ services [0] Exit ");
+                        int ans = readInt("\n[1] Mở services   [2] Tắt dịch vụ services [0] Bach ");
                         if(sub==1) manager.services();
                         if(sub==2)manager.turnOffServicesMenu();
                         if(sub==0) break;
@@ -723,7 +849,6 @@ public:
                     if (sub == 4)  runAdmin("chkdsk C: /f /r");
                     if (sub == 5)  main_.clearEventLogs();
                     if (sub == 6)  main_.Consumer_Content();
-                    if (sub == 7)  main_.customize_Registry();
                     if (sub == 8)  main_.Hibernate();
                     if (sub == 9)  main_.restart();
                     if (sub == 10) main_.windowsTelemetry();
@@ -747,36 +872,13 @@ public:
                     if (sub == 2) a.spamText();
                     if (sub == 3) a.autoPasteData();
                     if (sub == 4) {
-                        string path, path2;
-                        int level;
-                        while (true) {
-                            level = readInt("Level ZIP (0=Store, 1=Nhanh, 9=Toi da): ");
-                            if (level >= 7) {
-                                string confirm;
-                                cout << "[CANH BAO] Level " << level << " rat cham, ton RAM/CPU. Tiep tuc? (Y/N): "; cin >> confirm;
-                                cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                                if (confirm != "y" && confirm != "Y") continue;
-                            } break;
-                        }
-                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                        cout << "Duong dan nguon: "; getline(cin, path);
-                        cout << "Duong dan dich (.zip): "; getline(cin, path2);
-                        ZIP(path, path2, level);
-                    }
-                    if (sub == 5) {
-                        string zipPath, destPath;
-                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                        cout << "File .zip: "; getline(cin, zipPath);
-                        cout << "Duong dan dich: "; getline(cin, destPath);
-                        UNZIP(zipPath, destPath);
-                    }
-                    if (sub == 6) {
                         string line;
-                        cout << "[1] 1 ma QR\n[2] N ma QR\n[0] BACK\n[chon]: "; cin >> sub;
+                        cout << "\n\n[1] 1 Mã QR\n[2] N mã QR\n[0] BACK\n[chon]: "; sub=readSub();
                         if (sub == 0) break;
                         if (sub == 1) { cin.ignore(); cout << "Nhap text: "; getline(cin, line); exten.ShowQR(line); waitEnter(); }
-                        if (sub == 2) { cout << "So luong QR: "; cin >> sub; exten.ShowN_QR(sub); waitEnter(); }
-                    } else {
+                        if (sub == 2) { cout << "Số lượng QR: "; cin >> sub; exten.ShowN_QR(sub); waitEnter(); }
+                    }
+                    else {
                         waitEnter();
                     }
                 } break;
@@ -793,12 +895,43 @@ public:
             case 8:
                 while (true) {
                     int choice; cls();
-                    cout << "[1] Chay kieu tra       [0] Exit\n[chon]: "; cin >> choice;
+                    cout << "\n[1] Chay kieu tra       [0] Bach\n[chon]: "; cin >> choice;
                     log(mainChoice, choice);
                     if (choice == 1) op.upgradeWindowsEditionPRO();
                     if (choice == 0) break;
                     waitEnter();
                 } break;
+
+            case 9:
+            while(true){
+                file_folder();sub = readSub(); log(mainChoice, sub);
+                if(sub==0)break;
+                if (sub == 1)exp.nguytrangFolder();
+                if (sub == 2){
+                    string path, path2;
+                    int level;
+                    while (true){
+                        level = readInt("Level ZIP (0=Store, 1=Nhanh, 9=Tối đa): ");
+                        if (level >= 7){
+                            string confirm;
+                            cout << "[CANH BAO] Level " << level << " rất chậm, tốn RAM/CPU. Tiếp tục? (Y/N): ";cin >> confirm;
+                            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                            if (confirm != "y" && confirm != "Y")continue;
+                        }break;
+                    }
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                    cout << "Đường dẫn nguồn: ";getline(cin, path);
+                    cout << "Đường dẫn đích (.zip): ";getline(cin, path2);
+                    ZIP(path, path2, level);
+                }
+                if (sub == 3){
+                    string zipPath, destPath;
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                    cout << "File .zip: ";getline(cin, zipPath);
+                    cout << "Đường đẫn đích: ";getline(cin, destPath);
+                    UNZIP(zipPath, destPath);
+                }
+            }break;
             }
         }
     }
