@@ -675,6 +675,7 @@ public:
         vector<string> messages;
 
     public:
+        bool status = true;
         // Constructor: Tự động nạp data từ file txt khi Tool khởi chạy
         ChatBox(SystemCore &s) : sc(s){
             ifstream f("ChatData.txt");
@@ -682,7 +683,7 @@ public:
             if (f.is_open()){
                 messages.clear();
                 while (getline(f, line)){
-                    if (!line.empty()) messages.push_back(line);
+                    if (!line.empty())messages.push_back(line);
                 }
                 f.close();
             }
@@ -695,18 +696,23 @@ public:
 
         // Hàm in chữ tại tọa độ chỉ định mà không làm mất Menu
         void printAt(int x, int y, string text){
+            // Chỉ thực thi khi isMain == true
+            if (!status) return;
+
             HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
             CONSOLE_SCREEN_BUFFER_INFO csbi;
-            GetConsoleScreenBufferInfo(hConsole, &csbi);
-            COORD oldPos = csbi.dwCursorPosition; // Lưu vị trí bạn đang gõ Menu
+            if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) return;
+            COORD oldPos = csbi.dwCursorPosition;
+
             COORD botPos = {(SHORT)x, (SHORT)y};
             SetConsoleCursorPosition(hConsole, botPos);
-            sc.setColor(11); // Màu xanh lơ cho Bot
-            // Xóa dòng cũ trước khi in câu mới
+
+            sc.setColor(11);
             cout << "                                                                   ";
             SetConsoleCursorPosition(hConsole, botPos);
             cout << ">> Bot: " << text;
-            SetConsoleCursorPosition(hConsole, oldPos); // Trả con trỏ về chỗ cũ
+
+            SetConsoleCursorPosition(hConsole, oldPos);
             sc.setColor(7);
         }
 
@@ -714,19 +720,20 @@ public:
         void startLoop(){
             srand(time(0));
             while (true){
-                // Đợi 1s để Menu thực hiện cls() xong (nếu có)
-                Sleep(1000);
-                string msg = messages[rand() % messages.size()];
-                // In tại Cột 2, Dòng 2 (Ngay dưới dòng thông tin hệ thống)
-                printAt(2, 2, msg);
-                // SAU 3 GIÂY ĐỔI CÂU THOẠI
-                Sleep(3000);
+                if (status){
+                    Sleep(500);
+                    if (!status) continue; // Kiểm tra lại lần nữa trước khi in
+                    string msg = messages[rand() % messages.size()];
+                    printAt(2, 2, msg);
+                    // Đợi 3s cho lần đổi câu tiếp theo
+                    for (int i = 0; i < 30 && status; i++) Sleep(100);
+                }else{
+                    Sleep(200); // Nghỉ ngơi khi ở menu con
+                }
             }
-        }
+        };
     };
-
 };
-
 class AppUI : public SystemCore {
     Function::Internet   internet;
     Function::Maintenance main_;
@@ -787,10 +794,14 @@ public:
 
         int mainChoice;
         while (true) {
+            // bật con bot
+            chat.status=true;
             intro(); mainMenu();
             mainChoice = readSub();
             if (mainChoice <= 0) { if (mainChoice == 0) break; continue; }
 
+            // tắt con bot
+            chat.status=false;
             int sub;
             switch (mainChoice) {
 
