@@ -278,19 +278,24 @@ string Information::getGPUMemory() {
 
 string Information::getDeviceType() {
     static string cached = "";
-    if (!cached.empty()) return cached;
     SYSTEM_POWER_STATUS sps;
     if (GetSystemPowerStatus(&sps)) {
-        if (sps.BatteryFlag == 128) { cached = "Desktop"; return cached; }
-        if (sps.BatteryLifePercent != 255) {
-            stringstream ss;
-            ss << "Laptop: " << (int)sps.BatteryLifePercent << "%";
-            cached = ss.str();
-            return cached;
+        // 128 (0x80) nghĩa là "No System Battery" - Thường là Desktop
+        if (sps.BatteryFlag & 128) { 
+            cached = "Desktop (AC)"; 
+            return cached; 
         }
-        cached = "Laptop - Battery Unknown";
+        stringstream ss;
+        string status = (sps.ACLineStatus == 1) ? "Charging" : "Discharging";
+
+        if (sps.BatteryLifePercent != 255) {
+            ss << "Laptop [" << status << "]: " << (int)sps.BatteryLifePercent << "%";
+        } else {
+            ss << "Laptop [" << status << "]: Battery Unknown";
+        }   
+        cached = ss.str();
         return cached;
     }
-    cached = "Unknown";
+    cached = "Unknown Device";
     return cached;
 }

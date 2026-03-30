@@ -17,7 +17,6 @@ public:
     void Hibernate();
     void windowsTelemetry();
     void reduceShutdownTime();
-    //Hàm kill toàn bộ app khởi động
     void disableAllStartupApps();
 };
 

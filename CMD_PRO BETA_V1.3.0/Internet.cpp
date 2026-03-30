@@ -188,8 +188,6 @@ bool Internet::checkFileSizeAndConfirm(const string &path, long long &outSize) {
 }
 
 bool Internet::getFileSizeInfoAndPrompt(const string &path, long long &outSize) {
-    cout << "\n[...] Đang lấy thông tin dung lượng file...\n";
-
     if (!checkFileSizeAndConfirm(path, outSize)) {
         return false;
     }

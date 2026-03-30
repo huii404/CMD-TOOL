@@ -13,7 +13,6 @@ void Optimal::optimizeSystemPRO() {
     cout << "[Chặn cài app ngầm]\n";  m.Consumer_Content();
     cout << "[Tắt telemetry]\n";      m.windowsTelemetry();
     cout << "[Tắt hibernate]\n";      m.Hibernate();
-    cout << "[Tắt ứng dụng tự khởi động khi bật máy]\n";m.disableAllStartupApps();
     cout << "[OK] Hệ thống đã được tối ưu!\n";
 }
 

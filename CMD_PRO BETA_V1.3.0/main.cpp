@@ -51,7 +51,7 @@ public:
     void menuThongTin()  { cout << "[1] Phần mềm\n[2] System Info\n[3] Driver\n[0] Back\n[Chon]: "; }
     void menuQuanLy()    { cls(); cout << "[1] Control Panel\n[2] Task Manager\n[3] Computer Mgmt\n[4] Services\n[5] Registry\n[6] Device Manager\n[7] Lock\n[0] Back\n[Chon]: "; }
     void menuMang()      { cls(); cout << "[1] Xem IP\n[2] Renew IP\n[3] WiFi Password\n[4] Flush DNS\n[5] Reset TCP/IP\n[6] Chia sẻ File qua Web\n[0] Back\n[Chon]: "; }
-    void menuBaoTri()    { cls(); cout << "[1] Dọn rác\n[2] Quét Virus\n[3] SFC\n[4] Check Disk\n[5] Xóa lịch sử bảo trì\n[6] Chặn tải app ngầm\n[7] Tắt hibernate\n[8] Restart\n[9] Tắt telemetry\n[10] Xóa app rác\n[11] Tắt tất cả ứng dụng khởi động\n[0]  Back\nChon: "; }
+    void menuBaoTri()    { cls(); cout << "[1] Dọn rác\n[2] Quét Virus\n[3] SFC\n[4] Check Disk\n[5] Xóa lịch sử bảo trì\n[6] Chặn tải app ngầm\n[7] Tắt hibernate\n[8] Restart\n[9] Tắt telemetry\n[10] Xóa app rác\n[0]  Back\nChon: "; }
     void menuTienIch()   { cls(); cout << "[1] Auto Click\n[2] Spam Text\n[3] Auto Dán Data\n[4] Tạo QR\n[0] Back\n[Chon]: "; }
     void menuToiUu()     { cls(); cout << "[1] Tối ưu hệ thống PRO\n[2] Tối ưu mạng\n[3] Tối ưu bảo mật\n[0] Back\n[Chon]: "; }
     void file_folder()   { cls(); cout << "[1] Ngụy trang thư mục\n[2] Nén file/folder\n[3] Mã hóa nội dung file\n[4] Xóa cache trình duyệt\n[0] Back\n[chon]: ";}
@@ -138,7 +138,6 @@ public:
                         cout<<"\nsẽ có 1 vài app chính bị gỡ,bạn có muốn gỡ(y/n): ";cin>>c;
                         if(c=="y")exten.uninstallBloatware();
                     }
-                    if (sub == 11) main_.disableAllStartupApps();
                     waitEnter();
                 } break;
 
